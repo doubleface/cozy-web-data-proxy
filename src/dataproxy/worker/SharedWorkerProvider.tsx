@@ -14,6 +14,47 @@ import { removeStaleLocalData } from '@/dataproxy/worker/data'
 
 const log = Minilog('👷‍♂️ [SharedWorkerProvider]')
 
+// Event payload received from cozy realtime for io.cozy.files
+type FilesRealtimeEvent = {
+  dir_id: string
+  class: string
+  referenced_by?: Array<{ id?: string }>
+}
+
+function isFilesRealtimeEvent(value: unknown): value is FilesRealtimeEvent {
+  if (!value || typeof value !== 'object') return false
+  const v = value as Record<string, unknown>
+  return (
+    typeof v.dir_id === 'string' &&
+    typeof v.class === 'string' &&
+    (v.referenced_by === undefined || Array.isArray(v.referenced_by))
+  )
+}
+
+interface Realtime {
+  subscribe: (
+    event: 'created' | 'deleted' | 'updated',
+    doctype: string,
+    handler: (event: unknown) => void
+  ) => void
+  unsubscribe: (
+    event: 'created' | 'deleted' | 'updated',
+    doctype: string,
+    handler: (event: unknown) => void
+  ) => void
+}
+
+function hasRealtimePlugin(
+  plugins: unknown
+): plugins is { realtime: Realtime } {
+  return (
+    !!plugins &&
+    typeof plugins === 'object' &&
+    'realtime' in (plugins as Record<string, unknown>) &&
+    typeof (plugins as { realtime?: unknown }).realtime === 'object'
+  )
+}
+
 export const SharedWorkerContext = React.createContext<
   DataProxyWorkerContext | undefined
 >(undefined)
@@ -44,9 +85,67 @@ export const SharedWorkerProvider = React.memo(
     useEffect(() => {
       if (!client) return
 
+      if (!hasRealtimePlugin(client.plugins)) {
+        throw new Error(
+          'You must include the realtime plugin to use RealTimeQueries'
+        )
+      }
+      const realtime = client.plugins.realtime
+
+      if (!realtime) {
+        throw new Error(
+          'You must include the realtime plugin to use RealTimeQueries'
+        )
+      }
+
+      const handleFileCreated = (event: unknown): void => {
+        if (!isFilesRealtimeEvent(event)) return
+        if (
+          event.dir_id === 'io.cozy.files.shared-drives-dir' &&
+          event.class === 'shortcut'
+        ) {
+          const driveId = event?.referenced_by?.[0]?.id
+          if (driveId) {
+            log.info(`Shared drive ${driveId} created`)
+            worker?.addSharedDrive(driveId)
+          }
+        }
+      }
+      const handleFileDeleted = (event: unknown): void => {
+        if (!isFilesRealtimeEvent(event)) return
+        if (
+          event.dir_id === 'io.cozy.files.shared-drives-dir' &&
+          event.class === 'shortcut'
+        ) {
+          const driveId = event?.referenced_by?.[0]?.id
+          if (driveId) {
+            log.info(`Shared drive ${driveId} deleted`)
+            worker?.removeSharedDrive(driveId)
+          }
+        }
+      }
+      realtime.subscribe('created', 'io.cozy.files', handleFileCreated)
+      realtime.subscribe('deleted', 'io.cozy.files', handleFileDeleted)
+      return (): void => {
+        realtime.unsubscribe('created', 'io.cozy.files', handleFileCreated)
+        realtime.unsubscribe('deleted', 'io.cozy.files', handleFileDeleted)
+      }
+    }, [client, worker])
+
+    useEffect(() => {
+      if (!client) return
+
       const doAsync = async (): Promise<void> => {
         // Cleanup any remaining local data
         await removeStaleLocalData()
+
+        const { data: sharedDrives } = await client
+          .collection('io.cozy.sharings')
+          .fetchSharedDrives()
+
+        const sharedDriveIds: string[] = sharedDrives.map(
+          (drive: { id: string }) => drive.id
+        )
 
         log.debug('Init SharedWorker')
 
@@ -78,14 +177,17 @@ export const SharedWorkerProvider = React.memo(
         log.debug('Provide CozyClient data to Worker')
         const { uri, token } = client.getStackClient()
 
-        await obj.setup({
-          uri,
-          token: token.token,
-          instanceOptions: client.instanceOptions,
-          capabilities: client.capabilities,
-          useRemoteData
-        })
-        setWorker(() => obj)
+        await obj.setup(
+          {
+            uri,
+            token: token.token,
+            instanceOptions: client.instanceOptions,
+            capabilities: client.capabilities,
+            useRemoteData
+          },
+          { sharedDriveIds } as { sharedDriveIds: string[] }
+        )
+        setWorker((): Comlink.Remote<DataProxyWorker> => obj)
       }
 
       doAsync()

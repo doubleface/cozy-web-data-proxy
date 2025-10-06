@@ -3,6 +3,7 @@ import { createRoot } from 'react-dom/client'
 
 import CozyClient from 'cozy-client'
 import flag from 'cozy-flags'
+import { RealtimePlugin } from 'cozy-realtime'
 
 import schema from '@/doctypes'
 
@@ -59,6 +60,7 @@ export const setupApp = memoize(() => {
   const root = createRoot(container)
   const client = makeClient(container)
   client.registerPlugin(flag.plugin, null)
+  client.registerPlugin(RealtimePlugin)
 
   return { root, client }
 })

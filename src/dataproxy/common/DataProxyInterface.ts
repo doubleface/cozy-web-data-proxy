@@ -13,13 +13,18 @@ export interface SearchOptions {
 
 export interface DataProxyWorker {
   search: (query: string, options: SearchOptions) => unknown
-  setup: (clientData: ClientData) => Promise<void>
+  setup: (
+    clientData: ClientData,
+    options?: { sharedDriveIds: string[] }
+  ) => Promise<void>
   forceSyncPouch: () => void
   requestLink: (
     definition: QueryDefinition | Mutation,
     options?: QueryOptions | MutationOptions
   ) => Promise<unknown>
   reconnectRealtime: () => void
+  addSharedDrive: (driveId: string) => void
+  removeSharedDrive: (driveId: string) => void
 }
 
 export interface DataProxyWorkerPartialState {

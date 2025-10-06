@@ -19,6 +19,7 @@ import {
   KONNECTORS_DOCTYPE,
   TRIGGERS_DOCTYPE,
   SETTINGS_DOCTYPE,
+  SHARED_DRIVE_FILE_DOCTYPE,
   REPLICATION_DEBOUNCE,
   REPLICATION_DEBOUNCE_MAX_DELAY
 } from '@/consts'
@@ -45,7 +46,12 @@ let searchEngine: SearchEngine
 const broadcastChannel = new BroadcastChannel('DATA_PROXY_BROADCAST_CHANANEL')
 
 const dataProxy: DataProxyWorker = {
-  setup: async (clientData: ClientData) => {
+  setup: async (
+    clientData: ClientData,
+    options: { sharedDriveIds: string[] } = { sharedDriveIds: [] } as {
+      sharedDriveIds: string[]
+    }
+  ) => {
     log.debug('Received data for setting up client')
     if (client) return
     updateState()
@@ -93,6 +99,23 @@ const dataProxy: DataProxyWorker = {
         [SETTINGS_DOCTYPE]: {
           strategy: 'fromRemote'
         }
+      }
+    }
+
+    if (options?.sharedDriveIds?.length > 0) {
+      pouchLinkOptions.doctypes.push(
+        ...options?.sharedDriveIds?.map(
+          id => `${SHARED_DRIVE_FILE_DOCTYPE}-${id}`
+        )
+      )
+      pouchLinkOptions.doctypesReplicationOptions = {
+        ...pouchLinkOptions.doctypesReplicationOptions,
+        ...Object.fromEntries(
+          options?.sharedDriveIds?.map(id => [
+            `${SHARED_DRIVE_FILE_DOCTYPE}-${id}`,
+            { strategy: 'fromRemote', driveId: id }
+          ])
+        )
       }
     }
 
@@ -185,6 +208,46 @@ const dataProxy: DataProxyWorker = {
       dataProxy.forceSyncPouch()
       searchEngine.init() // Init again to refresh indexes
     }
+  },
+
+  addSharedDrive: async (driveId: string) => {
+    log.debug(`Worker: Adding shared drive ${driveId}`)
+    if (!client) {
+      throw new Error('Client is required to add a shared drive')
+    }
+    const pouchLink = getPouchLink(client)
+    if (pouchLink) {
+      const doctype = `${SHARED_DRIVE_FILE_DOCTYPE}-${driveId}`
+      const options = { strategy: 'fromRemote', driveId }
+      if (pouchLink.addDoctype) {
+        pouchLink.addDoctype(doctype, options)
+        pouchLink.startReplicationWithDebounce()
+      }
+    }
+
+    if (!searchEngine) {
+      throw new Error('SearchEngine is not initialized')
+    }
+
+    searchEngine.addSharedDrive(driveId)
+  },
+
+  removeSharedDrive: (driveId: string) => {
+    log.debug(`Worker: Removing shared drive ${driveId}`)
+    if (!client) {
+      throw new Error('Client is required to remove a shared drive')
+    }
+    const pouchLink = getPouchLink(client)
+    if (pouchLink) {
+      const doctype = `${SHARED_DRIVE_FILE_DOCTYPE}-${driveId}`
+      pouchLink.removeDoctype(doctype)
+    }
+
+    if (!searchEngine) {
+      throw new Error('SearchEngine is not initialized')
+    }
+
+    searchEngine.removeSharedDrive(driveId)
   }
 }
 

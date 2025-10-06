@@ -23,7 +23,13 @@ export const queryIsTrustedDevice = async (
     .fetchJSON('GET', '/settings/sessions/current')
 
   const isLongRun = resp?.data?.attributes?.long_run
-  return !!isLongRun
+  const isDefined = isLongRun !== undefined
+
+  if (!isDefined) {
+    return true // special case for twake instances with linagora SSO
+  } else {
+    return !!isLongRun
+  }
 }
 
 const deleteDatabases = async (): Promise<void> => {

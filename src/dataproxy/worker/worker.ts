@@ -218,10 +218,13 @@ const dataProxy: DataProxyWorker = {
     const pouchLink = getPouchLink(client)
     if (pouchLink) {
       const doctype = `${SHARED_DRIVE_FILE_DOCTYPE}-${driveId}`
-      const options = { strategy: 'fromRemote', driveId }
+      const options = {
+        strategy: 'fromRemote',
+        driveId,
+        shouldStartReplication: true
+      }
       if (pouchLink.addDoctype) {
         pouchLink.addDoctype(doctype, options)
-        pouchLink.startReplicationWithDebounce()
       }
     }
 

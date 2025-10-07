@@ -2,6 +2,7 @@ import * as Comlink from 'comlink'
 import React, { useState, useEffect, ReactNode } from 'react'
 
 import { useClient } from 'cozy-client'
+import flag from 'cozy-flags'
 import Minilog from 'cozy-minilog'
 
 import {
@@ -83,7 +84,7 @@ export const SharedWorkerProvider = React.memo(
     const client = useClient()
 
     useEffect(() => {
-      if (!client) return
+      if (!client || !flag('drive.shared-drive.enabled')) return
 
       if (!hasRealtimePlugin(client.plugins)) {
         throw new Error(
@@ -139,13 +140,16 @@ export const SharedWorkerProvider = React.memo(
         // Cleanup any remaining local data
         await removeStaleLocalData()
 
-        const { data: sharedDrives } = await client
-          .collection('io.cozy.sharings')
-          .fetchSharedDrives()
+        let sharedDriveIds: string[] = []
 
-        const sharedDriveIds: string[] = sharedDrives.map(
-          (drive: { id: string }) => drive.id
-        )
+        // Fetch shared drives only if the feature is enabled
+        if (flag('drive.shared-drive.enabled')) {
+          const { data: sharedDrives } = await client
+            .collection('io.cozy.sharings')
+            .fetchSharedDrives()
+
+          sharedDriveIds = sharedDrives.map((drive: { id: string }) => drive.id)
+        }
 
         log.debug('Init SharedWorker')
 

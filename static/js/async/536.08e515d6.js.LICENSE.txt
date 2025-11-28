@@ -1,3 +1,9 @@
+/**
+ * @license
+ * Copyright 2019 Google LLC
+ * SPDX-License-Identifier: Apache-2.0
+ */
+
 /**!
  * FlexSearch.js v0.7.41 (Bundle.module)
  * Author and Copyright: Thomas Wilkerling
